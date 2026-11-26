@@ -17,6 +17,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSyn
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
+import { selftest } from './lib/verify.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -50,6 +51,8 @@ if (issue !== null) {
   process.exit(1);
 }
 
+if (process.argv.includes('--selftest')) selftest(snapshot);
+
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows: board })}\n`);
 writeFileSync(join(out, 'data.js'), dataScript(radar));
@@ -70,6 +73,16 @@ function copyFiles(from: string, to: string): string[] {
 }
 
 copyFiles(join(here, 'dashboard'), join(out, 'dashboard'));
+// Include a compact build audit in the dossier's HTML source; the interactive page uses data.js.
+const audit = { snapshot: snapshot.as_of, scanned: snapshot.protocols.length, ranked: board.length,
+  watchlist: `${snapshot.watchlist.length}/${snapshot.watchlist.length}`, lanes: radar.lanes,
+  anchors: radar.model.anchors, loo: radar.model.loo, walk: radar.model.walk,
+  split: radar.model.walk_split, coefficients: radar.model.coefficients, labels: radar.model.labels,
+  terms: radar.model.ablations, residual_low: radar.model.residualLow, residual_high: radar.model.residualHigh,
+  verdicts: radar.verdicts, checks: radar.checks };
+const page = join(out, 'dashboard', 'index.html');
+writeFileSync(page, readFileSync(page, 'utf8').replace('<!-- BUILD_AUDIT -->',
+  '<script type="application/json" id="build-audit">' + JSON.stringify(audit).replace(/</g, '\\u003c') + '</script>'));
 const shots = copyFiles(join(here, 'screenshots'), join(out, 'screenshots'));
 if (shots.length < 3) {
   process.stderr.write(`token radar: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
@@ -86,6 +99,6 @@ for (const name of shots) {
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
 process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
+  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} beyond watchlist, ${radar.live_size} token-recorded set aside)\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
